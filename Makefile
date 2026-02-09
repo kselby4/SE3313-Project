@@ -145,9 +145,15 @@ UPROGS=\
 	$U/_logstress\
 	$U/_forphan\
 	$U/_dorphan\
+	$U/_hello_world\
+	$U/_ps\
+	$U/_good_pipe\
+	$U/_schedtest\
 
-fs.img: mkfs/mkfs README $(UPROGS)
-	mkfs/mkfs fs.img README $(UPROGS)
+TXTFILES=$(wildcard $U/*.txt)
+
+fs.img: mkfs/mkfs README $(UPROGS) $(TXTFILES)
+	mkfs/mkfs fs.img README $(UPROGS) $(TXTFILES)
 
 -include kernel/*.d user/*.d
 
