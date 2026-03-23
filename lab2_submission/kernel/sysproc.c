@@ -118,5 +118,3 @@ sys_kps(void)
 
   return kps(buf);
 }
-
-

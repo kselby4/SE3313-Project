@@ -6,7 +6,6 @@
 #include "proc.h"
 #include "defs.h"
 
-
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -125,9 +124,6 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
-  // LAB4: Initialize wait counter to 0 when process is created
-  // This will track how many scheduler cycles this process waits
-  p->waiting_tick = 0;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -390,14 +386,8 @@ kwait(uint64 addr)
 
         havekids = 1;
         if(pp->state == ZOMBIE){
+          // Found one.
           pid = pp->pid;
-          
-          // LAB4: When a child of "schedtest" exits, print its wait statistics
-          // This shows how many scheduler cycles the child spent waiting
-          if(strncmp(p->name, "schedtest", 16) == 0){
-            printf("schedstats: pid=%d waiting_tick=%d\n", pp->pid, pp->waiting_tick);
-          }
-          
           if(addr != 0 && copyout(p->pagetable, addr, (char *)&pp->xstate,
                                   sizeof(pp->xstate)) < 0) {
             release(&pp->lock);
@@ -425,82 +415,49 @@ kwait(uint64 addr)
 }
 
 // Per-CPU process scheduler.
-// Per-CPU process scheduler - runs in an infinite loop picking processes to run
+// Each CPU calls scheduler() after setting itself up.
+// Scheduler never returns.  It loops, doing:
+//  - choose a process to run.
+//  - swtch to start running that process.
+//  - eventually that process transfers control
+//    via swtch back to the scheduler.
 void
 scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-  struct proc *chosen = 0;
 
   c->proc = 0;
   for(;;){
+    // The most recent process to run may have had interrupts
+    // turned off; enable them to avoid a deadlock if all
+    // processes are waiting. Then turn them back off
+    // to avoid a possible race between an interrupt
+    // and wfi.
     intr_on();
-    chosen = 0;
+    intr_off();
 
-    // LAB4: CUSTOM SCHEDULING FOR SCHEDTEST
-    // Find the RUNNABLE child of "schedtest" with the smallest PID
-    // This makes child1 always run first (simulates FCFS scheduling)
-    for(p = proc; p < &proc[NPROC]; p++){
-      acquire(&p->lock);
-      // Check: is this process RUNNABLE AND a child of "schedtest"?
-      if(p->state == RUNNABLE &&
-         p->parent != 0 &&
-         strncmp(p->parent->name, "schedtest", 16) == 0)
-      {
-        // Keep track of the smallest PID we've found so far
-        if(chosen == 0 || p->pid < chosen->pid){
-          if(chosen != 0) release(&chosen->lock);
-          chosen = p;  // this is our new best candidate
-          continue;
-        }
-      }
-      release(&p->lock);
-    }
-
-    // If we found a schedtest child to run
-    if(chosen != 0){
-      // ==== LAB4: UPDATE WAITING TIME ====
-      // Before running chosen process, increment waiting_tick for all
-      // other schedtest children that are RUNNABLE (waiting to run)
-      for(p = proc; p < &proc[NPROC]; p++){
-        if(p == chosen) continue;  // don't count the chosen process as waiting
-        acquire(&p->lock);
-        if(p->state == RUNNABLE &&
-           p->parent != 0 &&
-           strncmp(p->parent->name, "schedtest", 16) == 0)
-        {
-          p->waiting_tick++;  // this process waited one more scheduler cycle
-        }
-        release(&p->lock);
-      }
-
-      // Run the chosen process (smallest PID schedtest child)
-      chosen->state = RUNNING;
-      c->proc = chosen;
-      swtch(&c->context, &chosen->context);  // switch to run chosen process
-      c->proc = 0;
-      release(&chosen->lock);
-      continue;
-    }
-
-    // ==== FALLBACK: Normal xv6 round-robin scheduling ====
-    // If no schedtest children to run, use default scheduling
     int found = 0;
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
+        // Switch to chosen process.  It is the process's job
+        // to release its lock and then reacquire it
+        // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
         swtch(&c->context, &p->context);
+
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
         c->proc = 0;
         found = 1;
       }
       release(&p->lock);
     }
-
     if(found == 0) {
-      asm volatile("wfi");  // nothing to run, wait for interrupt
+      // nothing to run; stop running on this core until an interrupt.
+      asm volatile("wfi");
     }
   }
 }
