@@ -152,6 +152,9 @@ UPROGS=\
 	$U/_cpuhog\
 	$U/_sensor\
 	$U/_energydemo\
+	$U/_sensor_normal\
+	$U/_sensor_eco\
+	$U/_ecodemo\
 
 TXTFILES=$(wildcard $U/*.txt)
 

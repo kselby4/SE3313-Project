@@ -91,6 +91,11 @@ struct proc {
   uint64 sleeping_ticks;       // timer ticks spent sleeping
   uint64 context_switches;     // number of times scheduled onto a CPU
 
+  // Eco sleep: optional duty cycling on pause() using global ticks.
+  int eco_enabled;             // non-zero if eco mode is on
+  int eco_period;            // wake at most every eco_period ticks
+  uint eco_wake_tick;        // next tick at which pause() may return
+
   // p->lock must be held when using these:
   enum procstate state;        // Process state
   void *chan;                  // If non-zero, sleeping on chan

@@ -7,6 +7,8 @@
 #include "proc.h"
 #include "vm.h"
 
+extern uint ticks;
+
 uint64
 sys_exit(void)
 {
@@ -69,11 +71,32 @@ sys_pause(void)
 {
   int n;
   uint ticks0;
+  struct proc *p = myproc();
 
   argint(0, &n);
   if(n < 0)
     n = 0;
+
   acquire(&tickslock);
+
+  acquire(&p->lock);
+  if(p->eco_enabled && p->eco_period > 0){
+    release(&p->lock);
+    while(ticks < p->eco_wake_tick){
+      if(killed(p)){
+        release(&tickslock);
+        return -1;
+      }
+      sleep(&ticks, &tickslock);
+    }
+    acquire(&p->lock);
+    p->eco_wake_tick = ticks + p->eco_period;
+    release(&p->lock);
+    release(&tickslock);
+    return 0;
+  }
+  release(&p->lock);
+
   ticks0 = ticks;
   while(ticks - ticks0 < n){
     if(killed(myproc())){
@@ -83,6 +106,34 @@ sys_pause(void)
     sleep(&ticks, &tickslock);
   }
   release(&tickslock);
+  return 0;
+}
+
+uint64
+sys_setecoperiod(void)
+{
+  int n;
+  struct proc *p = myproc();
+  uint t;
+
+  argint(0, &n);
+
+  if(n <= 0){
+    acquire(&p->lock);
+    p->eco_enabled = 0;
+    p->eco_period = 0;
+    p->eco_wake_tick = 0;
+    release(&p->lock);
+  } else {
+    acquire(&tickslock);
+    t = ticks;
+    release(&tickslock);
+    acquire(&p->lock);
+    p->eco_enabled = 1;
+    p->eco_period = n;
+    p->eco_wake_tick = t + n;
+    release(&p->lock);
+  }
   return 0;
 }
 

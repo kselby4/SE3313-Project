@@ -8,6 +8,7 @@
 #include "defs.h"
 
 extern uint64 sys_kps(void);
+extern uint64 sys_setecoperiod(void);
 
 // Fetch the uint64 at addr from the current process.
 int
@@ -129,6 +130,7 @@ static uint64 (*syscalls[])(void) = {
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
 [SYS_kps] sys_kps,
+[SYS_setecoperiod] sys_setecoperiod,
 };
 
 void

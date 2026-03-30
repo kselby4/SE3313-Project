@@ -142,6 +142,10 @@ found:
   p->sleeping_ticks = 0; // count of ticks process has spent sleeping
   p->context_switches = 0; //count of times the scheduler has switched ot or from this process 
 
+  p->eco_enabled = 0;
+  p->eco_period = 0;
+  p->eco_wake_tick = 0;
+
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
@@ -190,6 +194,9 @@ freeproc(struct proc *p)
   p->runnable_ticks = 0;
   p->sleeping_ticks = 0;
   p->context_switches = 0;
+  p->eco_enabled = 0;
+  p->eco_period = 0;
+  p->eco_wake_tick = 0;
   p->state = UNUSED;
 }
 
@@ -311,6 +318,10 @@ kfork(void)
   np->cwd = idup(p->cwd);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
+
+  np->eco_enabled = p->eco_enabled;
+  np->eco_period = p->eco_period;
+  np->eco_wake_tick = p->eco_wake_tick;
 
   pid = np->pid;
 
@@ -585,18 +596,22 @@ proc_energy_label(int score)
 static void
 proc_print_energy_header(void)
 {
-  printf("PID | STATE    | NAME       | ECO  | LABEL     | RUNNING | CSW | RUNNABLE | SLEEPING\n");
-  printf("----+----------+------------+------+-----------+---------+-----+----------+---------\n");
+  printf("PID | STATE    | NAME       | ECO  | LABEL     | RUNNING | CSW | RUNNABLE | SLEEPING | DUTY\n");
+  printf("----+----------+------------+------+-----------+---------+-----+----------+----------+-----\n");
 }
 
 static void
 proc_print_energy_row(struct proc *p, char *state)
 {
   int eco = proc_energy_score(p);
-  printf("%d | %s | %s | %d | %s | %d | %d | %d | %d\n",
+  printf("%d | %s | %s | %d | %s | %d | %d | %d | %d | ",
          p->pid, state, p->name, eco, proc_energy_label(eco),
          (int)p->running_ticks, (int)p->context_switches,
          (int)p->runnable_ticks, (int)p->sleeping_ticks);
+  if(p->eco_enabled && p->eco_period > 0)
+    printf("%d\n", p->eco_period);
+  else
+    printf("-\n");
 }
 
 // Switch to scheduler.  Must hold only p->lock
