@@ -167,6 +167,7 @@ clockintr()
   if(cpuid() == 0){
     acquire(&tickslock);
     ticks++;
+    proc_update_energy_stats();
     wakeup(&ticks);
     release(&tickslock);
   }
@@ -216,4 +217,3 @@ devintr()
     return 0;
   }
 }
-

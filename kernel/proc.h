@@ -86,6 +86,10 @@ struct proc {
   struct spinlock lock;
 
   uint waiting_tick;
+  uint64 cpu_ticks;            // timer ticks spent RUNNING (CPU time used)
+  uint64 runnable_ticks;       // timer ticks spent RUNNABLE but not running
+  uint64 sleep_ticks;          // timer ticks spent sleeping
+  uint64 context_switches;     // number of times scheduled onto a CPU
 
   // p->lock must be held when using these:
   enum procstate state;        // Process state

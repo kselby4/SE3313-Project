@@ -19,6 +19,12 @@ struct spinlock pid_lock;
 extern void forkret(void);
 static void freeproc(struct proc *p);
 
+//energy score variables
+static int proc_energy_score(struct proc *p);
+static char *proc_energy_label(int score);
+static void proc_print_energy_header(void);
+static void proc_print_energy_row(struct proc *p, char *state);
+
 extern char trampoline[]; // trampoline.S
 
 // helps ensure that wakeups of wait()ing
@@ -129,6 +135,12 @@ found:
   // This will track how many scheduler cycles this process waits
   p->waiting_tick = 0;
 
+  //adding for Feature one process energy score
+  p->cpu_ticks = 0; //count of how many timer ticks this process has actually spend running on CPU 
+  p->runnable_ticks = 0; //count of ticks in runnable state4
+  p->sleep_ticks = 0; // count of ticks process has spent sleeping
+  p->context_switches = 0; //count of times the scheduler has switched ot or from this process 
+
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     freeproc(p);
@@ -172,6 +184,11 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+  p->waiting_tick = 0;
+  p->cpu_ticks = 0;
+  p->runnable_ticks = 0;
+  p->sleep_ticks = 0;
+  p->context_switches = 0;
   p->state = UNUSED;
 }
 
@@ -476,6 +493,7 @@ scheduler(void)
       }
 
       // Run the chosen process (smallest PID schedtest child)
+      chosen->context_switches++;
       chosen->state = RUNNING;
       c->proc = chosen;
       swtch(&c->context, &chosen->context);  // switch to run chosen process
@@ -490,6 +508,7 @@ scheduler(void)
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
+        p->context_switches++;
         p->state = RUNNING;
         c->proc = p;
         swtch(&c->context, &p->context);
@@ -503,6 +522,80 @@ scheduler(void)
       asm volatile("wfi");  // nothing to run, wait for interrupt
     }
   }
+}
+
+
+//function that loops through every process in the process table and updates an energy counter varibale based on its current state 
+void
+proc_update_energy_stats(void)
+{
+  //declares a pointer to a process structure 
+  struct proc *p;
+
+  //loos through the process array 
+  for(p = proc; p < &proc[NPROC]; p++){
+    //locks the process before reading or changing counters 
+    acquire(&p->lock);
+
+    if(p->state == RUNNING){ //countrs CPU ticks 
+      p->cpu_ticks++;
+    } else if(p->state == RUNNABLE){ //counts runnable ticks 
+      p->runnable_ticks++;
+    } else if(p->state == SLEEPING){ //counts sleeping ticks 
+      p->sleep_ticks++; //when proc is blocked or asleep 
+    }
+    release(&p->lock); //unlocks process 
+  }
+}
+
+//function that comutes an energy score for each process 
+static int
+proc_energy_score(struct proc *p)
+{
+  //compute active ticks (time not sleeping)
+  uint64 active_ticks = p->cpu_ticks + p->runnable_ticks;
+
+  //compute sleep penaly (how active a process is compared to how much it sleeps )
+  uint64 sleep_ratio_penalty = (active_ticks * 100) / (p->sleep_ticks + 1);
+
+  //compute the score based on weighted scoring 
+  uint64 score = (3 * p->cpu_ticks) + (2 * p->runnable_ticks) +
+                 p->context_switches + sleep_ratio_penalty;
+
+  //returns score 
+  if(score > 0x7fffffffULL) //max overflow 
+    return 0x7fffffff;
+  return (int)score;
+}
+
+
+//converts numeric score into human-readable category 
+static char *
+proc_energy_label(int score)
+{
+  if(score < 200)
+    return "efficient";
+  if(score < 700)
+    return "mixed";
+  return "wasteful";
+}
+
+//helpers to print the scores 
+static void
+proc_print_energy_header(void)
+{
+  printf("PID | STATE    | NAME       | ECO  | LABEL     | CPU | CSW | RUNBL | SLEEP\n");
+  printf("----+----------+------------+------+-----------+-----+-----+-------+------\n");
+}
+
+static void
+proc_print_energy_row(struct proc *p, char *state)
+{
+  int eco = proc_energy_score(p);
+  printf("%d | %s | %s | %d | %s | %d | %d | %d | %d\n",
+         p->pid, state, p->name, eco, proc_energy_label(eco),
+         (int)p->cpu_ticks, (int)p->context_switches,
+         (int)p->runnable_ticks, (int)p->sleep_ticks);
 }
 
 // Switch to scheduler.  Must hold only p->lock
@@ -711,15 +804,16 @@ procdump(void)
   static char *states[] = {
   [UNUSED]    "unused",
   [USED]      "used",
-  [SLEEPING]  "sleep ",
+  [SLEEPING]  "sleep",
   [RUNNABLE]  "runble",
-  [RUNNING]   "run   ",
+  [RUNNING]   "run",
   [ZOMBIE]    "zombie"
   };
   struct proc *p;
   char *state;
 
   printf("\n");
+  proc_print_energy_header();
   for(p = proc; p < &proc[NPROC]; p++){
     if(p->state == UNUSED)
       continue;
@@ -727,8 +821,7 @@ procdump(void)
       state = states[p->state];
     else
       state = "???";
-    printf("%d %s %s", p->pid, state, p->name);
-    printf("\n");
+    proc_print_energy_row(p, state);
   }
 }
 
@@ -759,8 +852,7 @@ kps(char *arguments)
 
   // "-l": PID/STATE/NAME table
   else if(strncmp(arguments, "-l", 2) == 0){
-    printf("PID     STATE      NAME\n");
-    printf("------------------------------\n");
+    proc_print_energy_header();
 
     for(p = proc; p < &proc[NPROC]; p++){
       if(p->state == UNUSED)
@@ -771,7 +863,7 @@ kps(char *arguments)
       else
         state = "???";
 
-      printf("%d      %s     %s\n", p->pid, state, p->name);
+      proc_print_energy_row(p, state);
     }
   }
 
