@@ -136,9 +136,10 @@ found:
   p->waiting_tick = 0;
 
   //adding for Feature one process energy score
-  p->cpu_ticks = 0; //count of how many timer ticks this process has actually spend running on CPU 
+  
+  p->running_ticks = 0; //count of how many timer ticks this process has actually spend running on CPU 
   p->runnable_ticks = 0; //count of ticks in runnable state4
-  p->sleep_ticks = 0; // count of ticks process has spent sleeping
+  p->sleeping_ticks = 0; // count of ticks process has spent sleeping
   p->context_switches = 0; //count of times the scheduler has switched ot or from this process 
 
   // Allocate a trapframe page.
@@ -185,9 +186,9 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->waiting_tick = 0;
-  p->cpu_ticks = 0;
+  p->running_ticks = 0;
   p->runnable_ticks = 0;
-  p->sleep_ticks = 0;
+  p->sleeping_ticks = 0;
   p->context_switches = 0;
   p->state = UNUSED;
 }
@@ -538,11 +539,11 @@ proc_update_energy_stats(void)
     acquire(&p->lock);
 
     if(p->state == RUNNING){ //countrs CPU ticks 
-      p->cpu_ticks++;
+      p->running_ticks++;
     } else if(p->state == RUNNABLE){ //counts runnable ticks 
       p->runnable_ticks++;
     } else if(p->state == SLEEPING){ //counts sleeping ticks 
-      p->sleep_ticks++; //when proc is blocked or asleep 
+      p->sleeping_ticks++; //when proc is blocked or asleep 
     }
     release(&p->lock); //unlocks process 
   }
@@ -553,13 +554,13 @@ static int
 proc_energy_score(struct proc *p)
 {
   //compute active ticks (time not sleeping)
-  uint64 active_ticks = p->cpu_ticks + p->runnable_ticks;
+  uint64 active_ticks = p->running_ticks + p->runnable_ticks;
 
   //compute sleep penaly (how active a process is compared to how much it sleeps )
-  uint64 sleep_ratio_penalty = (active_ticks * 100) / (p->sleep_ticks + 1);
+  uint64 sleep_ratio_penalty = (active_ticks * 100) / (p->sleeping_ticks + 1);
 
   //compute the score based on weighted scoring 
-  uint64 score = (3 * p->cpu_ticks) + (2 * p->runnable_ticks) +
+  uint64 score = (3 * p->running_ticks) + (2 * p->runnable_ticks) +
                  p->context_switches + sleep_ratio_penalty;
 
   //returns score 
@@ -584,8 +585,8 @@ proc_energy_label(int score)
 static void
 proc_print_energy_header(void)
 {
-  printf("PID | STATE    | NAME       | ECO  | LABEL     | CPU | CSW | RUNBL | SLEEP\n");
-  printf("----+----------+------------+------+-----------+-----+-----+-------+------\n");
+  printf("PID | STATE    | NAME       | ECO  | LABEL     | RUNNING | CSW | RUNNABLE | SLEEPING\n");
+  printf("----+----------+------------+------+-----------+---------+-----+----------+---------\n");
 }
 
 static void
@@ -594,8 +595,8 @@ proc_print_energy_row(struct proc *p, char *state)
   int eco = proc_energy_score(p);
   printf("%d | %s | %s | %d | %s | %d | %d | %d | %d\n",
          p->pid, state, p->name, eco, proc_energy_label(eco),
-         (int)p->cpu_ticks, (int)p->context_switches,
-         (int)p->runnable_ticks, (int)p->sleep_ticks);
+         (int)p->running_ticks, (int)p->context_switches,
+         (int)p->runnable_ticks, (int)p->sleeping_ticks);
 }
 
 // Switch to scheduler.  Must hold only p->lock
