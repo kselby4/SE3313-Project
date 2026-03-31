@@ -95,6 +95,7 @@ struct proc {
   int eco_enabled;             // non-zero if eco mode is on
   int eco_period;            // wake at most every eco_period ticks
   uint eco_wake_tick;        // next tick at which pause() may return
+  int wake_boost;            // short-lived boost after wakeup
 
   // p->lock must be held when using these:
   enum procstate state;        // Process state

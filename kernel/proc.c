@@ -24,6 +24,8 @@ static int proc_energy_score(struct proc *p);
 static char *proc_energy_label(int score);
 static void proc_print_energy_header(void);
 static void proc_print_energy_row(struct proc *p, char *state);
+static int proc_sched_priority(struct proc *p);
+static int sched_mode = 1; // 0 = round-robin, 1 = energy-aware
 
 extern char trampoline[]; // trampoline.S
 
@@ -145,6 +147,7 @@ found:
   p->eco_enabled = 0;
   p->eco_period = 0;
   p->eco_wake_tick = 0;
+  p->wake_boost = 0;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -197,6 +200,7 @@ freeproc(struct proc *p)
   p->eco_enabled = 0;
   p->eco_period = 0;
   p->eco_wake_tick = 0;
+  p->wake_boost = 0;
   p->state = UNUSED;
 }
 
@@ -322,6 +326,7 @@ kfork(void)
   np->eco_enabled = p->eco_enabled;
   np->eco_period = p->eco_period;
   np->eco_wake_tick = p->eco_wake_tick;
+  np->wake_boost = p->wake_boost;
 
   pid = np->pid;
 
@@ -454,84 +459,97 @@ kwait(uint64 addr)
 }
 
 // Per-CPU process scheduler.
-// Per-CPU process scheduler - runs in an infinite loop picking processes to run
+// Mode 0: default xv6 round-robin.
+// Mode 1: energy-aware policy that favors periodic/sleepy tasks and penalizes CPU hogs.
 void
 scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-  struct proc *chosen = 0;
+  struct proc *chosen;
 
   c->proc = 0;
   for(;;){
+    int mode;
+    int best_prio;
+
     intr_on();
-    chosen = 0;
 
-    // LAB4: CUSTOM SCHEDULING FOR SCHEDTEST
-    // Find the RUNNABLE child of "schedtest" with the smallest PID
-    // This makes child1 always run first (simulates FCFS scheduling)
-    for(p = proc; p < &proc[NPROC]; p++){
-      acquire(&p->lock);
-      // Check: is this process RUNNABLE AND a child of "schedtest"?
-      if(p->state == RUNNABLE &&
-         p->parent != 0 &&
-         strncmp(p->parent->name, "schedtest", 16) == 0)
-      {
-        // Keep track of the smallest PID we've found so far
-        if(chosen == 0 || p->pid < chosen->pid){
-          if(chosen != 0) release(&chosen->lock);
-          chosen = p;  // this is our new best candidate
-          continue;
-        }
-      }
-      release(&p->lock);
-    }
-
-    // If we found a schedtest child to run
-    if(chosen != 0){
-      // ==== LAB4: UPDATE WAITING TIME ====
-      // Before running chosen process, increment waiting_tick for all
-      // other schedtest children that are RUNNABLE (waiting to run)
-      for(p = proc; p < &proc[NPROC]; p++){
-        if(p == chosen) continue;  // don't count the chosen process as waiting
+    mode = sched_mode;
+    if(mode == 0){
+      int found = 0;
+      for(p = proc; p < &proc[NPROC]; p++) {
         acquire(&p->lock);
-        if(p->state == RUNNABLE &&
-           p->parent != 0 &&
-           strncmp(p->parent->name, "schedtest", 16) == 0)
-        {
-          p->waiting_tick++;  // this process waited one more scheduler cycle
+        if(p->state == RUNNABLE) {
+          p->context_switches++;
+          p->state = RUNNING;
+          c->proc = p;
+          swtch(&c->context, &p->context);
+          c->proc = 0;
+          found = 1;
         }
         release(&p->lock);
       }
-
-      // Run the chosen process (smallest PID schedtest child)
-      chosen->context_switches++;
-      chosen->state = RUNNING;
-      c->proc = chosen;
-      swtch(&c->context, &chosen->context);  // switch to run chosen process
-      c->proc = 0;
-      release(&chosen->lock);
+      if(found == 0)
+        asm volatile("wfi");
       continue;
     }
 
-    // ==== FALLBACK: Normal xv6 round-robin scheduling ====
-    // If no schedtest children to run, use default scheduling
-    int found = 0;
+    chosen = 0;
+    best_prio = -2147483647;
     for(p = proc; p < &proc[NPROC]; p++) {
+      int prio;
       acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        p->context_switches++;
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
-        c->proc = 0;
-        found = 1;
+      if(p->state != RUNNABLE) {
+        release(&p->lock);
+        continue;
+      }
+
+      // Keep schedtest behavior deterministic for that lab program.
+      if(p->parent != 0 && strncmp(p->parent->name, "schedtest", 16) == 0){
+        if(chosen == 0 || p->pid < chosen->pid){
+          if(chosen != 0)
+            release(&chosen->lock);
+          chosen = p;
+          best_prio = 2147483647;
+          continue;
+        }
+        release(&p->lock);
+        continue;
+      }
+
+      prio = proc_sched_priority(p);
+      if(chosen == 0 || prio > best_prio || (prio == best_prio && p->pid < chosen->pid)) {
+        if(chosen != 0)
+          release(&chosen->lock);
+        chosen = p;
+        best_prio = prio;
+        continue;
       }
       release(&p->lock);
     }
 
-    if(found == 0) {
-      asm volatile("wfi");  // nothing to run, wait for interrupt
+    if(chosen != 0){
+      for(p = proc; p < &proc[NPROC]; p++){
+        if(p == chosen)
+          continue;
+        acquire(&p->lock);
+        if(p->state == RUNNABLE)
+          p->waiting_tick++;
+        if(p->wake_boost > 0)
+          p->wake_boost--;
+        release(&p->lock);
+      }
+
+      chosen->context_switches++;
+      chosen->wake_boost = 0;
+      chosen->state = RUNNING;
+      c->proc = chosen;
+      swtch(&c->context, &chosen->context);
+      c->proc = 0;
+      release(&chosen->lock);
+    } else {
+      asm volatile("wfi");
     }
   }
 }
@@ -578,6 +596,34 @@ proc_energy_score(struct proc *p)
   if(score > 0x7fffffffULL) //max overflow 
     return 0x7fffffff;
   return (int)score;
+}
+
+static int
+proc_sched_priority(struct proc *p)
+{
+  int prio = 100;
+  int score = proc_energy_score(p);
+
+  // Boost periodic/sensor-like behavior.
+  if(p->sleeping_ticks > p->running_ticks)
+    prio += 25;
+  if(p->eco_enabled)
+    prio += 30;
+  prio += p->wake_boost * 12;
+
+  // Fairness: a process that has waited while runnable gains some urgency.
+  if(p->runnable_ticks > p->running_ticks)
+    prio += 15;
+
+  // Penalize continuous CPU burners and wasteful workloads.
+  if(p->running_ticks > (p->sleeping_ticks + 1) * 4)
+    prio -= 35;
+  if(score >= 700)
+    prio -= 40;
+  else if(score >= 300)
+    prio -= 15;
+
+  return prio;
 }
 
 
@@ -732,10 +778,26 @@ wakeup(void *chan)
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
         p->state = RUNNABLE;
+        p->wake_boost = 8;
       }
       release(&p->lock);
     }
   }
+}
+
+int
+set_sched_mode(int mode)
+{
+  if(mode != 0 && mode != 1)
+    return -1;
+  sched_mode = mode;
+  return 0;
+}
+
+int
+get_sched_mode(void)
+{
+  return sched_mode;
 }
 
 // Kill the process with the given pid.

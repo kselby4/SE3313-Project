@@ -170,4 +170,18 @@ sys_kps(void)
   return kps(buf);
 }
 
+uint64
+sys_setschedmode(void)
+{
+  int mode;
+  argint(0, &mode);
+  return set_sched_mode(mode);
+}
+
+uint64
+sys_getschedmode(void)
+{
+  return get_sched_mode();
+}
+
 

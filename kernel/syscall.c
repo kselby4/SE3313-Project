@@ -9,6 +9,8 @@
 
 extern uint64 sys_kps(void);
 extern uint64 sys_setecoperiod(void);
+extern uint64 sys_setschedmode(void);
+extern uint64 sys_getschedmode(void);
 
 // Fetch the uint64 at addr from the current process.
 int
@@ -131,6 +133,8 @@ static uint64 (*syscalls[])(void) = {
 [SYS_close]   sys_close,
 [SYS_kps] sys_kps,
 [SYS_setecoperiod] sys_setecoperiod,
+[SYS_setschedmode] sys_setschedmode,
+[SYS_getschedmode] sys_getschedmode,
 };
 
 void

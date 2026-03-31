@@ -26,6 +26,8 @@ int pause(int);
 int uptime(void);
 int kps(char []);
 int setecoperiod(int);
+int setschedmode(int);
+int getschedmode(void);
 
 // ulib.c
 int stat(const char*, struct stat*);

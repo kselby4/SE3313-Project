@@ -44,3 +44,5 @@ entry("pause");
 entry("uptime");
 entry("kps");
 entry("setecoperiod");
+entry("setschedmode");
+entry("getschedmode");

@@ -155,6 +155,8 @@ UPROGS=\
 	$U/_sensor_normal\
 	$U/_sensor_eco\
 	$U/_ecodemo\
+	$U/_aggregator\
+	$U/_sedemo\
 
 TXTFILES=$(wildcard $U/*.txt)
 
