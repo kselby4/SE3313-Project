@@ -151,6 +151,9 @@ UPROGS=\
 	$U/_schedtest\
 	$U/_cpuhog\
 	$U/_sensor\
+	$U/_tempsensor\
+	$U/_airsensor\
+	$U/_powersensor\
 	$U/_energydemo\
 	$U/_sensor_normal\
 	$U/_sensor_eco\
