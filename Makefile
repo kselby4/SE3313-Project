@@ -160,6 +160,8 @@ UPROGS=\
 	$U/_ecodemo\
 	$U/_aggregator\
 	$U/_sedemo\
+	$U/_ecostat\
+	$U/_ecotop\
 
 TXTFILES=$(wildcard $U/*.txt)
 

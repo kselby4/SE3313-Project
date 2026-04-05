@@ -24,3 +24,4 @@
 #define SYS_setecoperiod 23
 #define SYS_setschedmode 24
 #define SYS_getschedmode 25
+#define SYS_getecostats  26

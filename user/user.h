@@ -1,5 +1,7 @@
 #define SBRK_ERROR ((char *)-1)
 
+#include "ecostat.h"
+
 struct stat;
 
 // system calls
@@ -28,6 +30,7 @@ int kps(char []);
 int setecoperiod(int);
 int setschedmode(int);
 int getschedmode(void);
+int getecostats(struct ecostat*, int);
 
 // ulib.c
 int stat(const char*, struct stat*);

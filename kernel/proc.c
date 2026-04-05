@@ -20,7 +20,7 @@ extern void forkret(void);
 static void freeproc(struct proc *p);
 
 //energy score variables
-static int proc_energy_score(struct proc *p);
+int proc_energy_score(struct proc *p);
 static char *proc_energy_label(int score);
 static void proc_print_energy_header(void);
 static void proc_print_energy_row(struct proc *p, char *state);
@@ -579,7 +579,7 @@ proc_update_energy_stats(void)
 }
 
 //function that comutes an energy score for each process 
-static int
+int
 proc_energy_score(struct proc *p)
 {
   //compute active ticks (time not sleeping)

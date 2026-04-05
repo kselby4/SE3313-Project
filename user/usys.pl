@@ -46,3 +46,4 @@ entry("kps");
 entry("setecoperiod");
 entry("setschedmode");
 entry("getschedmode");
+entry("getecostats");

@@ -103,6 +103,7 @@ int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
 int kps(char *arguments);
 void            proc_update_energy_stats(void);
+int             proc_energy_score(struct proc*);
 int             set_sched_mode(int);
 int             get_sched_mode(void);
 

@@ -6,8 +6,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "vm.h"
+#include "ecostat.h"
 
 extern uint ticks;
+extern struct proc proc[];
 
 uint64
 sys_exit(void)
@@ -184,4 +186,43 @@ sys_getschedmode(void)
   return get_sched_mode();
 }
 
+uint64
+sys_getecostats(void)
+{
+  uint64 ubuf;
+  int max;
+  struct ecostat tmp[NPROC];
+  struct proc *p;
+  struct proc *cur = myproc();
+  int n = 0;
+
+  argaddr(0, &ubuf);
+  argint(1, &max);
+  if(max < 0)
+    return -1;
+  if(max > NPROC)
+    max = NPROC;
+  if(max == 0)
+    return 0;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->state != UNUSED && n < max){
+      tmp[n].pid = p->pid;
+      tmp[n].state = p->state;
+      memmove(tmp[n].name, p->name, sizeof(tmp[n].name));
+      tmp[n].running_ticks = (int)p->running_ticks;
+      tmp[n].runnable_ticks = (int)p->runnable_ticks;
+      tmp[n].sleeping_ticks = (int)p->sleeping_ticks;
+      tmp[n].context_switches = (int)p->context_switches;
+      tmp[n].eco_score = proc_energy_score(p);
+      n++;
+    }
+    release(&p->lock);
+  }
+
+  if(n > 0 && copyout(cur->pagetable, ubuf, (char *)tmp, n * sizeof(struct ecostat)) < 0)
+    return -1;
+  return n;
+}
 
