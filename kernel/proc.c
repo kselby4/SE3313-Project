@@ -530,6 +530,10 @@ scheduler(void)
     }
 
     if(chosen != 0){
+      // Do not hold chosen's lock while scanning other procs: another CPU may
+      // hold a different proc as chosen and try to lock this one, deadlocking.
+      release(&chosen->lock);
+
       for(p = proc; p < &proc[NPROC]; p++){
         if(p == chosen)
           continue;
@@ -539,6 +543,12 @@ scheduler(void)
         if(p->wake_boost > 0)
           p->wake_boost--;
         release(&p->lock);
+      }
+
+      acquire(&chosen->lock);
+      if(chosen->state != RUNNABLE){
+        release(&chosen->lock);
+        continue;
       }
 
       chosen->context_switches++;
