@@ -196,6 +196,18 @@ QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 qemu: check-qemu-version $K/kernel fs.img
 	$(QEMU) $(QEMUOPTS)
 
+# Kill stray QEMU so fs.img is not write-locked (common after closing a terminal
+# without Ctrl-a x). Run: make kill-qemu   then   make qemu
+# Or: make qemu-safe
+.PHONY: kill-qemu qemu-safe
+kill-qemu:
+	@echo "Killing qemu-system-riscv64 (if any) to release fs.img..."
+	-killall -9 qemu-system-riscv64 2>/dev/null || true
+
+qemu-safe: kill-qemu check-qemu-version $K/kernel fs.img
+	@sleep 1
+	$(MAKE) qemu
+
 .gdbinit: .gdbinit.tmpl-riscv
 	sed "s/:1234/:$(GDBPORT)/" < $^ > $@
 
